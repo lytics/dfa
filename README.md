@@ -147,4 +147,4 @@ digraph {
 
 Which when give to the `dot` command line tool could generate a PNG:
 
-[/dfa.png]
+!(DFA)[/dfa.png]
