@@ -1,6 +1,9 @@
 package dfa
 
-import "fmt"
+import (
+	"bytes"
+	"fmt"
+)
 
 type State string
 
@@ -211,6 +214,22 @@ func (m *DFA) Stop() {
 func (m *DFA) Done() (State, error) {
 	t := <-m.done
 	return t.s, t.err
+}
+
+func (m *DFA) GraphViz() string {
+	var buf bytes.Buffer
+	buf.WriteString("digraph {\n")
+	for do, cdo := range m.d {
+		if do.s == m.q0 {
+			buf.WriteString(fmt.Sprintf("    \"%s\" -> \"%s\"[label=\"%s\"];\n", do.s, cdo.s, do.l))
+		} else if m.f[cdo.s] {
+			buf.WriteString(fmt.Sprintf("    \"%s\" -> \"%s\"[label=\"%s\"];\n", do.s, cdo.s, do.l))
+		} else {
+			buf.WriteString(fmt.Sprintf("    \"%s\" -> \"%s\"[label=\"%s\"];\n", do.s, cdo.s, do.l))
+		}
+	}
+	buf.WriteString("}")
+	return buf.String()
 }
 
 func accepted(s State) laststate {

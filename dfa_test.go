@@ -149,3 +149,49 @@ func TestLastState(t *testing.T) {
 		t.Fail()
 	}
 }
+
+func TestGraphViz(t *testing.T) {
+
+	// States
+	Starting := State("starting")
+	Running := State("running")
+	Resending := State("resending")
+	Finishing := State("finishing")
+	Exiting := State("exiting")
+	Terminating := State("terminating")
+	// Letters
+	Failure := Letter("failure")
+	SendFailure := Letter("send-failure")
+	SendSuccess := Letter("send-success")
+	EverybodyStarted := Letter("everybody-started")
+	EverybodyFinished := Letter("everybody-finished")
+	ProducersFinished := Letter("producers-finished")
+	Exit := Letter("exit")
+
+	d := New()
+	d.SetStartState(Starting)
+	d.SetTerminalStates(Exiting, Terminating)
+
+	next := func() Letter { return Exit }
+	exit := func() {}
+
+	d.SetTransition(Starting, EverybodyStarted, Running, next)
+	d.SetTransition(Starting, Failure, Exiting, exit)
+	d.SetTransition(Starting, Exit, Exiting, exit)
+
+	d.SetTransition(Running, SendFailure, Resending, next)
+	d.SetTransition(Running, ProducersFinished, Finishing, next)
+	d.SetTransition(Running, Failure, Exiting, exit)
+	d.SetTransition(Running, Exit, Exiting, exit)
+
+	d.SetTransition(Resending, SendSuccess, Running, next)
+	d.SetTransition(Resending, SendFailure, Resending, next)
+	d.SetTransition(Resending, Failure, Exiting, exit)
+	d.SetTransition(Resending, Exit, Exiting, exit)
+
+	d.SetTransition(Finishing, EverybodyFinished, Terminating, exit)
+	d.SetTransition(Finishing, Failure, Exiting, exit)
+	d.SetTransition(Finishing, Exit, Exiting, exit)
+
+	fmt.Println(d.GraphViz())
+}
