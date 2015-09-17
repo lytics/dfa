@@ -72,5 +72,5 @@ two types:
  * `func() dfa.Letter`
 
 Functions associated with a transition ending in a terminal state must
-give a function that returns no values. Functions that transition to
+give a function that returns no letter. Functions that transition to
 non-terminal states must return a letter.
