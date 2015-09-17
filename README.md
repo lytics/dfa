@@ -62,3 +62,15 @@ to run that will supply the next letter.
     final, err := d.Done()
     ...
 ```
+
+### Stateful Computations
+
+The functions give when defining the transitions must have one of
+two types:
+
+ * `func()`
+ * `func() dfa.Letter`
+
+Functions associated with a transition ending in a terminal state must
+give a function that returns no values. Functions that transition to
+non-terminal states must return a letter.
