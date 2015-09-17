@@ -145,7 +145,7 @@ digraph {
 }
 ```
 
-Which when give to the [GraphViz](http://graphs.grevian.org/graph) command line tool
+Which when given to the [GraphViz](http://graphs.grevian.org/graph) command line tool
 would visualize the DFA like this:
 
 ![DFA](/dfa.png)
