@@ -30,10 +30,15 @@ to run that will supply the next letter.
 
     // Define letters.
     Done = dfa.Letter("done")
+    Repeat = dfa.Letter("repeat")
 
     // Define stateful computations.
     starting := func() dfa.Letter {
-        return Done
+        if err := do(); err != nil {
+            return Repeat
+        } else {
+            return Done
+        }
     }
     finishing := func() {
         fmt.Println("all finished")
@@ -43,14 +48,17 @@ to run that will supply the next letter.
     d.SetStartState(Starting)
     d.SetTerminalStates(Finishing)
     d.SetTransition(Starting, Done, Finishing, finishing)
+    d.SetTransition(Starting, Repeat, Starting, starting)
 
     // Calls the given function in a new go-routine,
     // unless there were initialization errors.
     err := d.Run(starting)
     ...
 
-    // Blocks until the DFA accepts its input
-    // or its Stop() function is called.
+    // Blocks until the DFA accepts its input or
+    // its Stop() function is called. If the DFA
+    // stopped in a non-terminal state an err is
+    // reported. The final state is always given.
     final, err := d.Done()
     ...
 ```
