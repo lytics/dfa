@@ -124,7 +124,7 @@ text which can then generate a flow diagram of the DFA.
     fmt.Println(d.GraphViz())
 ```
 
-Would generate the output:
+The above code generates the output:
 
 ```
 digraph {
@@ -145,6 +145,7 @@ digraph {
 }
 ```
 
-Which when give to the `dot` command line tool could generate a PNG:
+Which when give to the [GraphViz](http://graphs.grevian.org/graph) command line tool
+would visualize the DFA like this:
 
 ![DFA](/dfa.png)
