@@ -65,7 +65,7 @@ to run that will supply the next letter.
 
 ### Stateful Computations
 
-The functions give when defining the transitions must have one of
+The functions given when defining the transitions must have one of
 two types:
 
  * `func()`
