@@ -114,23 +114,23 @@ func (m *DFA) Alphabet() []Letter {
 	return e
 }
 
-func (m *DFA) Run(init interface{}) error {
+func (m *DFA) Run(init interface{}) (State, error) {
 	// Check some pre-conditions.
 	if init == nil {
-		return fmt.Errorf("initial stateful computation is nil")
+		panic("initial stateful computation is nil")
 	}
 	if m.q0 == State("") {
-		return fmt.Errorf("no start state definied")
+		panic("no start state definied")
 	}
 	if len(m.f) == 0 {
-		return fmt.Errorf("no terminal states definied")
+		panic("no terminal states definied")
 	}
 	if _, ok := m.q[m.q0]; !ok {
-		return fmt.Errorf("start state '%v' is not in the set of states", m.q0)
+		panic(fmt.Sprintf("start state '%v' is not in the set of states", m.q0))
 	}
 	for s, _ := range m.f {
 		if _, ok := m.q[s]; !ok {
-			return fmt.Errorf("terminal state '%v' is not in the set of states", s)
+			panic(fmt.Sprintf("terminal state '%v' is not in the set of states", s))
 		}
 	}
 	// Run the DFA.
@@ -204,14 +204,14 @@ func (m *DFA) Run(init interface{}) error {
 			m.done <- rejected(s, "state '%v' is not terminal", s)
 		}
 	}()
-	return nil
+	return m.result()
 }
 
 func (m *DFA) Stop() {
 	close(m.input)
 }
 
-func (m *DFA) Done() (State, error) {
+func (m *DFA) result() (State, error) {
 	t := <-m.done
 	return t.s, t.err
 }

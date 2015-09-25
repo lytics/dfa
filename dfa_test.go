@@ -91,14 +91,9 @@ func TestSimple(t *testing.T) {
 	d.SetTransition(Resending, SendFailure, Resending, e.Next)
 	d.SetTransition(Resending, ExitWanted, Exiting, e.Last)
 
-	err := d.Run(e.Next)
+	final, err := d.Run(e.Next)
 	if err != nil {
 		t.Fatalf("failed to run dfa: %v", err)
-	}
-
-	final, err := d.Done()
-	if err != nil {
-		t.Fatalf("failed to terminate dfa: %v", err)
 	}
 	if final != Exiting {
 		t.Fatalf("final state should have been: %v, but was: %v", Exiting, final)
@@ -130,13 +125,9 @@ func TestLastState(t *testing.T) {
 	// The expectation is that the Next nor Last method will
 	// ever be called since the DFA's starting and terminal
 	// state are the same.
-	err := d.Run(e.Next)
+	final, err := d.Run(e.Next)
 	if err != nil {
 		t.Fatalf("failed to run dfa: %v", err)
-	}
-	final, err := d.Done()
-	if err != nil {
-		t.Fatalf("received error: %v", err)
 	}
 	if final != Starting {
 		t.Fatalf("final state should have been: %v, but was: %v", Starting, final)

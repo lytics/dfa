@@ -52,14 +52,11 @@ to run that will supply the next letter.
 
     // Calls the given function in a new go-routine,
     // unless there were initialization errors.
-    err := d.Run(starting)
-    ...
-
     // Blocks until the DFA accepts its input or
     // its Stop() function is called. If the DFA
     // stopped in a non-terminal state an err is
     // reported. The final state is always given.
-    final, err := d.Done()
+    final, err := d.Run(starting)
     ...
 ```
 
