@@ -1,6 +1,7 @@
 package dfa
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -18,18 +19,31 @@ type Exec struct {
 	log       func(string)
 	nextCount int
 	lastCount int
+	err       error
 	cmu       *sync.Mutex
+}
+
+func (e *Exec) NextErr() (Letter, error) {
+	e.cmu.Lock()
+	defer e.cmu.Unlock()
+	if e.err != nil {
+		return e.Sequence[0], e.err
+	}
+	return e.n(), nil
 }
 
 func (e *Exec) Next() Letter {
 	e.cmu.Lock()
 	defer e.cmu.Unlock()
+	return e.n()
+}
+
+func (e *Exec) n() Letter {
 	l := e.Sequence[0]
 	e.Sequence = e.Sequence[1:]
 	e.nextCount++
 	return l
 }
-
 func (e *Exec) Last() {
 	e.cmu.Lock()
 	defer e.cmu.Unlock()
@@ -130,6 +144,69 @@ func TestSimple(t *testing.T) {
 
 	if e.LastCount() != 1 {
 		t.Fatalf("LastCount() expected 1, got %d", e.LastCount())
+	}
+}
+
+func TestErrState(t *testing.T) {
+	Starting := State("starting")
+	RunningOne := State("running1")
+	RunningTwo := State("running2")
+	Done := State("done")
+
+	Next := Letter("next")
+
+	// no error
+	{
+		e := NewExec([]Letter{
+			Next,
+			Next,
+			Next,
+			Next,
+		})
+
+		d := New()
+		d.SetStartState(Starting)
+		d.SetTerminalStates(Done)
+		d.SetTransition(Starting, Next, RunningOne, e.Next)
+		d.SetTransition(RunningOne, Next, RunningTwo, e.NextErr)
+		d.SetTransition(RunningTwo, Next, Done, e.NextErr)
+
+		final, err := d.Run(e.Next)
+		if err != nil {
+			t.Fatalf("expected <nil> error: %v", err)
+		}
+
+		if final != Done {
+			t.Fatalf("expected Final, got %s", final)
+		}
+	}
+
+	// with error
+	{
+		e := NewExec([]Letter{
+			Next,
+			Next,
+			Next,
+			Next,
+		})
+		expected := errors.New("lol")
+		e.err = expected
+
+		d := New()
+		d.SetStartState(Starting)
+		d.SetTerminalStates(Done)
+		d.SetTransition(Starting, Next, RunningOne, e.Next)
+		d.SetTransition(RunningOne, Next, RunningTwo, e.NextErr)
+		d.SetTransition(RunningTwo, Next, Done, e.NextErr)
+
+		final, err := d.Run(e.Next)
+		if err != expected {
+			t.Fatalf("expected error %v, got %v", expected, err)
+		}
+
+		if final != RunningTwo {
+			t.Fatalf("expected RunningTwo, got %s", final)
+		}
 	}
 }
 

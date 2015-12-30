@@ -25,7 +25,7 @@ type DFA struct {
 	f        map[State]bool                     // Terminal States
 	synccall bool                               // Call callbacks synchronously
 	done     chan laststate                     // Termination channel
-	input    *Letter                            // Inputs to the DFA
+	input    *lettererr                         // Inputs to the DFA
 	stop     chan struct{}
 	logger   func(State) // Logger for transitions
 }
@@ -42,6 +42,11 @@ type codomainelement struct {
 
 type laststate struct {
 	s   State
+	err error
+}
+
+type lettererr struct {
+	l   Letter
 	err error
 }
 
@@ -73,6 +78,7 @@ func (m *DFA) SetTransition(from State, input Letter, to State, exec interface{}
 		if m.f[to] {
 			panic(fmt.Sprintf("stateful computation must be of type func() for terminal '%v' state", to))
 		}
+	case func() (Letter, error):
 	default:
 		panic("stateful computation must be of type func() or func() Letter")
 	}
@@ -155,7 +161,11 @@ func (m *DFA) Run(init interface{}) (State, error) {
 			case func() Letter:
 				m.logger(s)
 				l := init()
-				m.input = &l
+				m.input = &lettererr{l, nil}
+			case func() (Letter, error):
+				m.logger(s)
+				l, e := init()
+				m.input = &lettererr{l, e}
 			}
 		}
 		for {
@@ -169,7 +179,11 @@ func (m *DFA) Run(init interface{}) (State, error) {
 				break
 			}
 			if m.input != nil {
-				l := *m.input
+				if m.input.err != nil {
+					m.done <- errstate(s, m.input.err)
+					return
+				}
+				l := m.input.l
 				// Reject upfront if letter is not in alphabet.
 				if !m.e[l] {
 					m.done <- rejected(s, "letter '%v' is not in alphabet", l)
@@ -185,10 +199,15 @@ func (m *DFA) Run(init interface{}) (State, error) {
 					case func():
 						m.logger(s)
 						exec()
+						m.input = nil
 					case func() Letter:
 						m.logger(s)
 						l := exec()
-						m.input = &l
+						m.input = &lettererr{l, nil}
+					case func() (Letter, error):
+						m.logger(s)
+						l, e := exec()
+						m.input = &lettererr{l, e}
 					}
 					if m.f[s] {
 						// If the new state is a terminal state then
@@ -203,6 +222,8 @@ func (m *DFA) Run(init interface{}) (State, error) {
 					m.done <- rejected(s, "no state transition for input '%v' from '%v'", l, s)
 					return
 				}
+			} else {
+				break
 			}
 		}
 		// The caller has closed the input channel, check if the
@@ -247,4 +268,8 @@ func accepted(s State) laststate {
 
 func rejected(s State, format string, a ...interface{}) laststate {
 	return laststate{s: s, err: fmt.Errorf(format, a...)}
+}
+
+func errstate(s State, err error) laststate {
+	return laststate{s: s, err: err}
 }
