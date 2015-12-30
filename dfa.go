@@ -25,8 +25,9 @@ type DFA struct {
 	f        map[State]bool                     // Terminal States
 	synccall bool                               // Call callbacks synchronously
 	done     chan laststate                     // Termination channel
-	input    chan Letter                        // Inputs to the DFA
-	logger   func(State)                        // Logger for transitions
+	input    *Letter                            // Inputs to the DFA
+	stop     chan struct{}
+	logger   func(State) // Logger for transitions
 }
 
 type domainelement struct {
@@ -51,7 +52,7 @@ func New() *DFA {
 		f:      make(map[State]bool),
 		d:      make(map[domainelement]*codomainelement),
 		done:   make(chan laststate, 1),
-		input:  make(chan Letter, 1),
+		stop:   make(chan struct{}),
 		logger: func(State) {},
 	}
 }
@@ -147,31 +148,39 @@ func (m *DFA) Run(init interface{}) (State, error) {
 		} else {
 			// Otherwise continue reading generated input
 			// by starting the next stateful computation.
-			go func() {
-				switch init := init.(type) {
-				case func():
-					m.logger(s)
-					init()
-				case func() Letter:
-					m.logger(s)
-					l := init()
-					m.input <- l
-				}
-			}()
-		}
-		for l := range m.input {
-			// Reject upfront if letter is not in alphabet.
-			if !m.e[l] {
-				m.done <- rejected(s, "letter '%v' is not in alphabet", l)
-				return
+			switch init := init.(type) {
+			case func():
+				m.logger(s)
+				init()
+			case func() Letter:
+				m.logger(s)
+				l := init()
+				m.input = &l
 			}
-			// Compose the domain element, so that the co-domain
-			// element can be found via the transition function.
-			de := domainelement{l: l, s: s}
-			// Check the transition function.
-			if coe := m.d[de]; coe != nil {
-				s = coe.s
-				go func() {
+		}
+		for {
+			var stopnow bool
+			select {
+			case <-m.stop:
+				stopnow = true
+			default:
+			}
+			if stopnow {
+				break
+			}
+			if m.input != nil {
+				l := *m.input
+				// Reject upfront if letter is not in alphabet.
+				if !m.e[l] {
+					m.done <- rejected(s, "letter '%v' is not in alphabet", l)
+					return
+				}
+				// Compose the domain element, so that the co-domain
+				// element can be found via the transition function.
+				de := domainelement{l: l, s: s}
+				// Check the transition function.
+				if coe := m.d[de]; coe != nil {
+					s = coe.s
 					switch exec := coe.exec.(type) {
 					case func():
 						m.logger(s)
@@ -179,21 +188,21 @@ func (m *DFA) Run(init interface{}) (State, error) {
 					case func() Letter:
 						m.logger(s)
 						l := exec()
-						m.input <- l
+						m.input = &l
 					}
-				}()
-				if m.f[s] {
-					// If the new state is a terminal state then
-					// the DFA has accepted the input sequence
-					// and it can stop.
-					m.done <- accepted(s)
+					if m.f[s] {
+						// If the new state is a terminal state then
+						// the DFA has accepted the input sequence
+						// and it can stop.
+						m.done <- accepted(s)
+						return
+					}
+				} else {
+					// Otherwise stop the DFA with a rejected state,
+					// the DFA has rejected the input sequence.
+					m.done <- rejected(s, "no state transition for input '%v' from '%v'", l, s)
 					return
 				}
-			} else {
-				// Otherwise stop the DFA with a rejected state,
-				// the DFA has rejected the input sequence.
-				m.done <- rejected(s, "no state transition for input '%v' from '%v'", l, s)
-				return
 			}
 		}
 		// The caller has closed the input channel, check if the
@@ -208,7 +217,7 @@ func (m *DFA) Run(init interface{}) (State, error) {
 }
 
 func (m *DFA) Stop() {
-	close(m.input)
+	close(m.stop)
 }
 
 func (m *DFA) result() (State, error) {
