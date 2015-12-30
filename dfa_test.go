@@ -2,24 +2,50 @@ package dfa
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 )
 
+func NewExec(seq []Letter) *Exec {
+	return &Exec{
+		Sequence: seq,
+		cmu:      &sync.Mutex{},
+	}
+}
+
 type Exec struct {
 	Sequence  []Letter
-	NextCount int
-	LastCount int
+	log       func(string)
+	nextCount int
+	lastCount int
+	cmu       *sync.Mutex
 }
 
 func (e *Exec) Next() Letter {
+	e.cmu.Lock()
+	defer e.cmu.Unlock()
 	l := e.Sequence[0]
 	e.Sequence = e.Sequence[1:]
-	e.NextCount++
+	e.nextCount++
 	return l
 }
 
 func (e *Exec) Last() {
-	e.LastCount++
+	e.cmu.Lock()
+	defer e.cmu.Unlock()
+	e.lastCount++
+}
+
+func (e *Exec) NextCount() int {
+	e.cmu.Lock()
+	defer e.cmu.Unlock()
+	return e.nextCount
+}
+
+func (e *Exec) LastCount() int {
+	e.cmu.Lock()
+	defer e.cmu.Unlock()
+	return e.lastCount
 }
 
 func Print(from State, via Letter, to State) {
@@ -57,18 +83,16 @@ func TestSimple(t *testing.T) {
 	SendFailure := Letter("send-failure")
 	DoneSuccess := Letter("done-success")
 
-	e := &Exec{
-		Sequence: []Letter{
-			RegisterSuccess,
-			GroupJoinSuccess,
-			SendSuccess,
-			SendSuccess,
-			SendFailure,
-			SendFailure,
-			SendSuccess,
-			ExitWanted,
-		},
-	}
+	e := NewExec([]Letter{
+		RegisterSuccess,
+		GroupJoinSuccess,
+		SendSuccess,
+		SendSuccess,
+		SendFailure,
+		SendFailure,
+		SendSuccess,
+		ExitWanted,
+	})
 
 	d := New()
 	d.SetStartState(Registering)
@@ -95,15 +119,17 @@ func TestSimple(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to run dfa: %v", err)
 	}
+
 	if final != Exiting {
 		t.Fatalf("final state should have been: %v, but was: %v", Exiting, final)
 	}
 
-	if e.NextCount != 8 {
-		t.Fail()
+	if e.NextCount() != 8 {
+		t.Fatalf("NexCount() expected to be 8, got %d", e.NextCount())
 	}
-	if e.LastCount != 1 {
-		t.Fail()
+
+	if e.LastCount() != 1 {
+		t.Fatalf("LastCount() expected 1, got %d", e.LastCount())
 	}
 }
 
@@ -113,9 +139,7 @@ func TestLastState(t *testing.T) {
 	// Inputs
 	Transition := Letter("transition")
 
-	e := &Exec{
-		Sequence: []Letter{},
-	}
+	e := NewExec([]Letter{})
 
 	d := New()
 	d.SetStartState(Starting)
@@ -133,10 +157,10 @@ func TestLastState(t *testing.T) {
 		t.Fatalf("final state should have been: %v, but was: %v", Starting, final)
 	}
 
-	if e.NextCount != 0 {
+	if e.NextCount() != 0 {
 		t.Fail()
 	}
-	if e.LastCount != 0 {
+	if e.LastCount() != 0 {
 		t.Fail()
 	}
 }
