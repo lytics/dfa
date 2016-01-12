@@ -1,6 +1,9 @@
 dfa
 ===
 
+[![Build Status](https://travis-ci.org/lytics/dfa.svg?branch=master)](https://travis-ci.org/lytics/dfa)
+[![GoDoc](https://godoc.org/github.com/lytics/dfa?status.svg)](https://godoc.org/github.com/lytics/dfa)
+
 The `dfa` package implements a deterministic finite automata for use to define stateful
 computations that are easier understood when transitions are specified explicitly. The
 API is more interested in using the DFA to clearly define stateful computation, rather
