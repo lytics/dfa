@@ -65,16 +65,16 @@ func (m *DFA) SetTransition(from State, input Letter, to State, exec interface{}
 		panic("state cannot be defined as the empty string")
 	}
 	switch exec.(type) {
-	case func():
+	case func() error:
 		if !m.f[to] {
-			panic(fmt.Sprintf("stateful computation must be of type func() Letter for non-terminal '%v' state", to))
+			panic(fmt.Sprintf("stateful computation must be of type 'func() (Letter, error)' for non-terminal '%v' state", to))
 		}
-	case func() Letter:
+	case func() (Letter, error):
 		if m.f[to] {
-			panic(fmt.Sprintf("stateful computation must be of type func() for terminal '%v' state", to))
+			panic(fmt.Sprintf("stateful computation must be of type 'func() error' for terminal '%v' state", to))
 		}
 	default:
-		panic("stateful computation must be of type func() or func() Letter")
+		panic("stateful computation must be of type 'func() error' or 'func() (Letter, error)")
 	}
 	m.q[to] = true
 	m.q[from] = true
@@ -149,12 +149,12 @@ func (m *DFA) Run(init interface{}) (State, error) {
 			// Otherwise continue reading generated input
 			// by starting the next stateful computation.
 			switch init := init.(type) {
-			case func():
+			case func() error:
 				m.logger(s)
-				init()
-			case func() Letter:
+				err := init()
+			case func() (Letter, error):
 				m.logger(s)
-				l := init()
+				l, err := init()
 				m.input = &l
 			}
 		}
