@@ -5,6 +5,19 @@ import (
 	"fmt"
 )
 
+type Errors []error
+
+func (e Errors) Error() string {
+	var buf bytes.Buffer
+	for i, err := range e {
+		buf.WriteString(err.Error())
+		if i < len(e)-1 {
+			buf.WriteString(", ")
+		}
+	}
+	return buf.String()
+}
+
 type State string
 
 func (s State) String() string {
@@ -41,8 +54,8 @@ type codomainelement struct {
 }
 
 type laststate struct {
-	s   State
-	err error
+	s      State
+	errors Errors
 }
 
 func New() *DFA {
@@ -57,6 +70,8 @@ func New() *DFA {
 	}
 }
 
+// SetTransition, argument 'exec' must be a function that will supply the next letter if the
+// 'to' state is non-terminal.
 func (m *DFA) SetTransition(from State, input Letter, to State, exec interface{}) {
 	if exec == nil {
 		panic("stateful computation cannot be nil")
@@ -85,10 +100,13 @@ func (m *DFA) SetTransition(from State, input Letter, to State, exec interface{}
 	}
 }
 
+// SetStartState, there can be only one.
 func (m *DFA) SetStartState(q0 State) {
 	m.q0 = q0
 }
 
+// SetTerminalStates, there can be more than one. Once entered the
+// DFA will stop.
 func (m *DFA) SetTerminalStates(f ...State) {
 	for _, q := range f {
 		m.f[q] = true
@@ -99,6 +117,7 @@ func (m *DFA) SetTransitionLogger(logger func(State)) {
 	m.logger = logger
 }
 
+// States of the DFA.
 func (m *DFA) States() []State {
 	q := make([]State, 0, len(m.q))
 	for s, _ := range m.q {
@@ -107,6 +126,7 @@ func (m *DFA) States() []State {
 	return q
 }
 
+// Alphabet of the DFA.
 func (m *DFA) Alphabet() []Letter {
 	e := make([]Letter, 0, len(m.e))
 	for l, _ := range m.e {
@@ -115,6 +135,8 @@ func (m *DFA) Alphabet() []Letter {
 	return e
 }
 
+// Run the DFA, blocking until Stop is called or the DFA enters a terminal state.
+// Returns the terminal state and any errors.
 func (m *DFA) Run(init interface{}) (State, error) {
 	// Check some pre-conditions.
 	if init == nil {
@@ -137,13 +159,14 @@ func (m *DFA) Run(init interface{}) (State, error) {
 	// Run the DFA.
 	go func() {
 		defer close(m.done)
+		var errors Errors
 		// The current state, starts at q0.
 		s := m.q0
 		// Run the initial stateful computation.
 		if m.f[s] {
 			// If the state is a terminal state then the DFA has
 			// accepted the input sequence and it can stop.
-			m.done <- accepted(s)
+			m.done <- laststate{s, errors}
 			return
 		} else {
 			// Otherwise continue reading generated input
@@ -151,11 +174,17 @@ func (m *DFA) Run(init interface{}) (State, error) {
 			switch init := init.(type) {
 			case func() error:
 				m.logger(s)
-				err := init()
+				if err := init(); err != nil {
+					errors = append(errors, err)
+				}
 			case func() (Letter, error):
 				m.logger(s)
-				l, err := init()
-				m.input = &l
+				if l, err := init(); err != nil {
+					errors = append(errors, err)
+					m.input = &l
+				} else {
+					m.input = &l
+				}
 			}
 		}
 		for {
@@ -172,7 +201,8 @@ func (m *DFA) Run(init interface{}) (State, error) {
 				l := *m.input
 				// Reject upfront if letter is not in alphabet.
 				if !m.e[l] {
-					m.done <- rejected(s, "letter '%v' is not in alphabet", l)
+					errors = append(errors, fmt.Errorf("letter '%v' is not in alphabet", l))
+					m.done <- laststate{s, errors}
 					return
 				}
 				// Compose the domain element, so that the co-domain
@@ -182,25 +212,32 @@ func (m *DFA) Run(init interface{}) (State, error) {
 				if coe := m.d[de]; coe != nil {
 					s = coe.s
 					switch exec := coe.exec.(type) {
-					case func():
+					case func() error:
 						m.logger(s)
-						exec()
-					case func() Letter:
+						if err := exec(); err != nil {
+							errors = append(errors, err)
+						}
+					case func() (Letter, error):
 						m.logger(s)
-						l := exec()
-						m.input = &l
+						if l, err := exec(); err != nil {
+							errors = append(errors, err)
+							m.input = &l
+						} else {
+							m.input = &l
+						}
 					}
 					if m.f[s] {
 						// If the new state is a terminal state then
 						// the DFA has accepted the input sequence
 						// and it can stop.
-						m.done <- accepted(s)
+						m.done <- laststate{s, errors}
 						return
 					}
 				} else {
 					// Otherwise stop the DFA with a rejected state,
 					// the DFA has rejected the input sequence.
-					m.done <- rejected(s, "no state transition for input '%v' from '%v'", l, s)
+					errors = append(errors, fmt.Errorf("no state transition for input '%v' from '%v'", l, s))
+					m.done <- laststate{s, errors}
 					return
 				}
 			}
@@ -208,23 +245,23 @@ func (m *DFA) Run(init interface{}) (State, error) {
 		// The caller has closed the input channel, check if the
 		// current state is accepted or rejected by the DFA.
 		if m.f[s] {
-			m.done <- accepted(s)
+			m.done <- laststate{s, errors}
 		} else {
-			m.done <- rejected(s, "state '%v' is not terminal", s)
+			errors = append(errors, fmt.Errorf("state '%v' is not terminal", s))
+			m.done <- laststate{s, errors}
 		}
 	}()
 	return m.result()
 }
 
+// Stop the DFA.
 func (m *DFA) Stop() {
 	close(m.stop)
 }
 
-func (m *DFA) result() (State, error) {
-	t := <-m.done
-	return t.s, t.err
-}
-
+// GraphViz representation string which can be copy-n-pasted into
+// any online tool like http://graphs.grevian.org/graph to get
+// a diagram of the DFA.
 func (m *DFA) GraphViz() string {
 	var buf bytes.Buffer
 	buf.WriteString("digraph {\n")
@@ -241,10 +278,11 @@ func (m *DFA) GraphViz() string {
 	return buf.String()
 }
 
-func accepted(s State) laststate {
-	return laststate{s: s}
-}
-
-func rejected(s State, format string, a ...interface{}) laststate {
-	return laststate{s: s, err: fmt.Errorf(format, a...)}
+func (m *DFA) result() (State, error) {
+	t := <-m.done
+	if len(t.errors) == 0 {
+		return t.s, nil
+	} else {
+		return t.s, t.errors
+	}
 }

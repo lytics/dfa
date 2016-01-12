@@ -2,6 +2,7 @@ package dfa
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -21,19 +22,20 @@ type Exec struct {
 	cmu       *sync.Mutex
 }
 
-func (e *Exec) Next() Letter {
+func (e *Exec) Next() (Letter, error) {
 	e.cmu.Lock()
 	defer e.cmu.Unlock()
 	l := e.Sequence[0]
 	e.Sequence = e.Sequence[1:]
 	e.nextCount++
-	return l
+	return l, nil
 }
 
-func (e *Exec) Last() {
+func (e *Exec) Last() error {
 	e.cmu.Lock()
 	defer e.cmu.Unlock()
 	e.lastCount++
+	return nil
 }
 
 func (e *Exec) NextCount() int {
@@ -187,8 +189,8 @@ func TestGraphViz(t *testing.T) {
 	d.SetStartState(Starting)
 	d.SetTerminalStates(Exiting, Terminating)
 
-	next := func() Letter { return Exit }
-	exit := func() {}
+	next := func() (Letter, error) { return Exit, nil }
+	exit := func() error { return nil }
 
 	d.SetTransition(Starting, EverybodyStarted, Running, next)
 	d.SetTransition(Starting, Failure, Exiting, exit)
@@ -208,5 +210,76 @@ func TestGraphViz(t *testing.T) {
 	d.SetTransition(Finishing, Failure, Exiting, exit)
 	d.SetTransition(Finishing, Exit, Exiting, exit)
 
-	fmt.Println(d.GraphViz())
+	viz := d.GraphViz()
+
+	// Should be something like below, but order of
+	// nodes is not consistent:
+	//
+	// digraph {
+	//     "resending" -> "resending"[label="send-failure"];
+	//     "starting" -> "running"[label="everybody-started"];
+	//     "starting" -> "exiting"[label="failure"];
+	//     "running" -> "resending"[label="send-failure"];
+	//     "resending" -> "exiting"[label="failure"];
+	//     "finishing" -> "exiting"[label="failure"];
+	//     "running" -> "finishing"[label="producers-finished"];
+	//     "running" -> "exiting"[label="failure"];
+	//     "resending" -> "running"[label="send-success"];
+	//     "finishing" -> "terminating"[label="everybody-finished"];
+	//     "finishing" -> "exiting"[label="exit"];
+	//     "starting" -> "exiting"[label="exit"];
+	//     "running" -> "exiting"[label="exit"];
+	//     "resending" -> "exiting"[label="exit"];
+	// }
+
+	if !strings.Contains(viz, `"resending" -> "resending"[label="send-failure"];`) {
+		t.Fatalf("expected string: `%v`", `"resending" -> "resending"[label="send-failure"];`)
+	}
+
+	if !strings.Contains(viz, `"finishing" -> "exiting"[label="exit"];`) {
+		t.Fatalf("expected string: `%v`", `"finishing" -> "exiting"[label="exit"];`)
+	}
+}
+
+func TestErrors(t *testing.T) {
+	// States
+	Starting := State("starting")
+	Running := State("running")
+	Exiting := State("exiting")
+	// Letters
+	Failure := Letter("failure")
+	Success := Letter("success")
+
+	d := New()
+	d.SetStartState(Starting)
+	d.SetTerminalStates(Exiting)
+
+	starting := func() (Letter, error) { return Success, nil }
+	running := func() (Letter, error) { return Failure, fmt.Errorf("error from running") }
+	exiting := func() error { return fmt.Errorf("error from exiting") }
+
+	d.SetTransition(Starting, Success, Running, running)
+	d.SetTransition(Starting, Failure, Exiting, exiting)
+
+	d.SetTransition(Running, Success, Exiting, exiting)
+	d.SetTransition(Running, Failure, Exiting, exiting)
+
+	final, err := d.Run(starting)
+	if err == nil {
+		t.Fatalf("expected non-nil error")
+	}
+	if final != Exiting {
+		t.Fatalf("expected final state to be Exiting")
+	}
+	switch err := err.(type) {
+	case Errors:
+		if "error from running" != err[0].Error() {
+			t.Fatalf("expected 1st error to be 'error from running'")
+		}
+		if "error from exiting" != err[1].Error() {
+			t.Fatalf("expected 2nd error to be 'error from exiting'")
+		}
+	default:
+		t.Fatalf("expected error of type Errors")
+	}
 }

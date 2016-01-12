@@ -14,8 +14,10 @@ The implementation has all the normal compnents:
  * a start state (q0 ∈ Q)
  * a set of terminal states (F ⊆ Q)
 
-The one addition is that for each transition, Q × Σ → Q, you _must_ specify a function
-to run that will supply the next letter.
+The two additions are: (1) for each transition, Q × Σ → Q, you must specify a function
+to run that will supply the next letter; (2) the functions that return the next letter
+can also return an error, the DFA will collect those into an `Errors` type and return on
+termination.
 
 ### Importing
 
@@ -33,15 +35,15 @@ to run that will supply the next letter.
     Repeat = dfa.Letter("repeat")
 
     // Define stateful computations.
-    starting := func() dfa.Letter {
+    starting := func() (dfa.Letter, error) {
         if err := do(); err != nil {
-            return Repeat
+            return Repeat, err
         } else {
-            return Done
+            return Done, nil
         }
     }
-    finishing := func() {
-        fmt.Println("all finished")
+    finishing := func() error {
+        fmt.Println("all finished"), nil
     }
 
     d := dfa.New()
@@ -53,11 +55,18 @@ to run that will supply the next letter.
     // Calls the given function in a new go-routine,
     // unless there were initialization errors.
     // Blocks until the DFA accepts its input or
-    // its Stop() function is called. If the DFA
-    // stopped in a non-terminal state an err is
-    // reported. The final state is always given.
-    final, err := d.Run(starting)
-    ...
+    // its Stop() function is called. The final state
+    // is always returned, if any non-nil errors
+    // were returned from your functions then errors
+    // is also non-nil.
+    final, errors := d.Run(starting)
+
+    // If the functions 'starting' or 'finishing'
+    // returned any errors they will be contained
+    // in the returned 'errors' value.
+    for _, err := range errors {
+        ...
+    }
 ```
 
 ### Stateful Computations
@@ -65,8 +74,8 @@ to run that will supply the next letter.
 The functions given when defining the transitions must have one of
 two types:
 
- * `func()`
- * `func() dfa.Letter`
+ * `func() error`
+ * `func() (dfa.Letter, error)`
 
 Functions associated with a transition ending in a terminal state must
 give a function that returns no letter. Functions that transition to
