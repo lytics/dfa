@@ -122,7 +122,7 @@ func (m *DFA) Alphabet() []Letter {
 }
 
 // Run the DFA, blocking until Stop is called or the DFA enters a terminal state.
-// Returns the last state and true is the last state was a terminal state.
+// Returns the last state and true if the last state was a terminal state.
 func (m *DFA) Run(init interface{}) (State, bool) {
 	// Check some pre-conditions.
 	if init == nil {
