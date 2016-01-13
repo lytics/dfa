@@ -22,20 +22,19 @@ type Exec struct {
 	cmu       *sync.Mutex
 }
 
-func (e *Exec) Next() (Letter, error) {
+func (e *Exec) Next() Letter {
 	e.cmu.Lock()
 	defer e.cmu.Unlock()
 	l := e.Sequence[0]
 	e.Sequence = e.Sequence[1:]
 	e.nextCount++
-	return l, nil
+	return l
 }
 
-func (e *Exec) Last() error {
+func (e *Exec) Last() {
 	e.cmu.Lock()
 	defer e.cmu.Unlock()
 	e.lastCount++
-	return nil
 }
 
 func (e *Exec) NextCount() int {
@@ -117,9 +116,9 @@ func TestSimple(t *testing.T) {
 	d.SetTransition(Resending, SendFailure, Resending, e.Next)
 	d.SetTransition(Resending, ExitWanted, Exiting, e.Last)
 
-	final, err := d.Run(e.Next)
-	if err != nil {
-		t.Fatalf("failed to run dfa: %v", err)
+	final, accepted := d.Run(e.Next)
+	if !accepted {
+		t.Fatalf("failed to recognize Exiting or Terminating as terminal state")
 	}
 
 	if final != Exiting {
@@ -151,9 +150,9 @@ func TestLastState(t *testing.T) {
 	// The expectation is that the Next nor Last method will
 	// ever be called since the DFA's starting and terminal
 	// state are the same.
-	final, err := d.Run(e.Next)
-	if err != nil {
-		t.Fatalf("failed to run dfa: %v", err)
+	final, accepted := d.Run(e.Next)
+	if !accepted {
+		t.Fatalf("failed to recognize Starting as terminal state")
 	}
 	if final != Starting {
 		t.Fatalf("final state should have been: %v, but was: %v", Starting, final)
@@ -189,8 +188,8 @@ func TestGraphViz(t *testing.T) {
 	d.SetStartState(Starting)
 	d.SetTerminalStates(Exiting, Terminating)
 
-	next := func() (Letter, error) { return Exit, nil }
-	exit := func() error { return nil }
+	next := func() Letter { return Exit }
+	exit := func() {}
 
 	d.SetTransition(Starting, EverybodyStarted, Running, next)
 	d.SetTransition(Starting, Failure, Exiting, exit)
@@ -238,48 +237,5 @@ func TestGraphViz(t *testing.T) {
 
 	if !strings.Contains(viz, `"finishing" -> "exiting"[label="exit"];`) {
 		t.Fatalf("expected string: `%v`", `"finishing" -> "exiting"[label="exit"];`)
-	}
-}
-
-func TestErrors(t *testing.T) {
-	// States
-	Starting := State("starting")
-	Running := State("running")
-	Exiting := State("exiting")
-	// Letters
-	Failure := Letter("failure")
-	Success := Letter("success")
-
-	d := New()
-	d.SetStartState(Starting)
-	d.SetTerminalStates(Exiting)
-
-	starting := func() (Letter, error) { return Success, nil }
-	running := func() (Letter, error) { return Failure, fmt.Errorf("error from running") }
-	exiting := func() error { return fmt.Errorf("error from exiting") }
-
-	d.SetTransition(Starting, Success, Running, running)
-	d.SetTransition(Starting, Failure, Exiting, exiting)
-
-	d.SetTransition(Running, Success, Exiting, exiting)
-	d.SetTransition(Running, Failure, Exiting, exiting)
-
-	final, err := d.Run(starting)
-	if err == nil {
-		t.Fatalf("expected non-nil error")
-	}
-	if final != Exiting {
-		t.Fatalf("expected final state to be Exiting")
-	}
-	switch err := err.(type) {
-	case Errors:
-		if "error from running" != err[0].Error() {
-			t.Fatalf("expected 1st error to be 'error from running'")
-		}
-		if "error from exiting" != err[1].Error() {
-			t.Fatalf("expected 2nd error to be 'error from exiting'")
-		}
-	default:
-		t.Fatalf("expected error of type Errors")
 	}
 }
