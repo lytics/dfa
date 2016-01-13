@@ -17,10 +17,8 @@ The implementation has all the normal compnents:
  * a start state (q0 ∈ Q)
  * a set of terminal states (F ⊆ Q)
 
-The two additions are: (1) for each transition, Q × Σ → Q, you must specify a function
-to run that will supply the next letter; (2) the functions that return the next letter
-can also return an error, the DFA will collect those into an `Errors` type and return on
-termination.
+For each transition, Q × Σ → Q, you must specify a function to run that will supply the
+next letter, rather than the input being on some "tape."
 
 ### Importing
 
@@ -37,18 +35,23 @@ termination.
     Done = dfa.Letter("done")
     Repeat = dfa.Letter("repeat")
 
+    // Error reporting is done by user code.
+    var errors []error
+
     // Define stateful computations.
-    starting := func() (dfa.Letter, error) {
+    starting := func() dfa.Letter {
         if err := do(); err != nil {
-            return Repeat, err
+            errors = append(errors, err)
+            return Repeat
         } else {
-            return Done, nil
+            return Done
         }
     }
-    finishing := func() error {
-        fmt.Println("all finished"), nil
+    finishing := func() {
+        fmt.Println("all finished")
     }
 
+    // Order matter, set start and terminal states first.
     d := dfa.New()
     d.SetStartState(Starting)
     d.SetTerminalStates(Finishing)
@@ -59,14 +62,11 @@ termination.
     // unless there were initialization errors.
     // Blocks until the DFA accepts its input or
     // its Stop() function is called. The final state
-    // is always returned, if any non-nil errors
-    // were returned from your functions then errors
-    // is also non-nil.
-    final, errors := d.Run(starting)
+    // is returned, and accepted == true if the final
+    // state is a terminal state.
+    final, accepted := d.Run(starting)
 
-    // If the functions 'starting' or 'finishing'
-    // returned any errors they will be contained
-    // in the returned 'errors' value.
+    // Error handling is up to the user application.
     for _, err := range errors {
         ...
     }
@@ -77,8 +77,8 @@ termination.
 The functions given when defining the transitions must have one of
 two types:
 
- * `func() error`
- * `func() (dfa.Letter, error)`
+ * `func()`
+ * `func() dfa.Letter`
 
 Functions associated with a transition ending in a terminal state must
 give a function that returns no letter. Functions that transition to
