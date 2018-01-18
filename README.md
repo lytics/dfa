@@ -9,7 +9,7 @@ computations that are easier understood when transitions are specified explicitl
 API is more interested in using the DFA to clearly define stateful computation, rather
 than actually being used to recognize languages.
 
-The implementation has all the normal compnents:
+The implementation has all the normal components:
 
  * a finite set of states (Q)
  * a finite set of input symbols called the alphabet (Σ)
