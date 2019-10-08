@@ -222,6 +222,84 @@ func (m *DFA) Run(init interface{}) (State, bool) {
 	return m.result()
 }
 
+// RunSynchronous runs the DFA without a cancellable goroutine
+func (m *DFA) RunSynchronous(init interface{}) (State, bool) {
+	// Check some pre-conditions.
+	if init == nil {
+		panic("initial stateful computation is nil")
+	}
+	if m.q0 == State("") {
+		panic("no start state definied")
+	}
+	if len(m.f) == 0 {
+		panic("no terminal states definied")
+	}
+	if _, ok := m.q[m.q0]; !ok {
+		panic(fmt.Sprintf("start state '%v' is not in the set of states", m.q0))
+	}
+	for s, _ := range m.f {
+		if _, ok := m.q[s]; !ok {
+			panic(fmt.Sprintf("terminal state '%v' is not in the set of states", s))
+		}
+	}
+
+	// The current state, starts at q0.
+	s := m.q0
+	// Run the initial stateful computation.
+	if m.f[s] {
+		// If the state is a terminal state then the DFA has
+		// accepted the input sequence and it can stop.
+		return s, true
+	} else {
+		// Otherwise continue reading generated input
+		// by starting the next stateful computation.
+		switch init := init.(type) {
+		case func():
+			m.logger(s)
+			init()
+		case func() Letter:
+			m.logger(s)
+			l := init()
+			m.input = &l
+		}
+	}
+	for {
+		if m.input != nil {
+			l := *m.input
+			// Reject upfront if letter is not in alphabet.
+			if !m.e[l] {
+				panic(fmt.Sprintf("letter '%v' is not in alphabet", l))
+			}
+			// Compose the domain element, so that the co-domain
+			// element can be found via the transition function.
+			de := domainelement{l: l, s: s}
+			// Check the transition function.
+			if coe := m.d[de]; coe != nil {
+				s = coe.s
+				switch exec := coe.exec.(type) {
+				case func():
+					m.logger(s)
+					exec()
+				case func() Letter:
+					m.logger(s)
+					l := exec()
+					m.input = &l
+				}
+				if m.f[s] {
+					// If the new state is a terminal state then
+					// the DFA has accepted the input sequence
+					// and it can stop.
+					return s, true
+				}
+			} else {
+				// Otherwise stop the DFA with a rejected state,
+				// the DFA has rejected the input sequence.
+				panic(fmt.Sprintf("no state transition for input '%v' from '%v'", l, s))
+			}
+		}
+	}
+}
+
 // Stop the DFA.
 func (m *DFA) Stop() {
 	close(m.stop)
