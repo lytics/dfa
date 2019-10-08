@@ -239,3 +239,72 @@ func TestGraphViz(t *testing.T) {
 		t.Fatalf("expected string: `%v`", `"finishing" -> "exiting"[label="exit"];`)
 	}
 }
+
+func TestRunSimple(t *testing.T) {
+	// States
+	Registering := State("registering")
+	Waiting := State("waiting")
+	Running := State("running")
+	Resending := State("resending")
+	Exiting := State("exiting")
+	Terminating := State("terminating")
+
+	// Inputs
+	RegisterSuccess := Letter("register-success")
+	RegisterFailure := Letter("register-failure")
+	ExitWanted := Letter("exit-wanted")
+	GroupJoinSuccess := Letter("group-join-success")
+	GroupJoinFailure := Letter("group-join-failure")
+	SendSuccess := Letter("send-success")
+	SendFailure := Letter("send-failure")
+	DoneSuccess := Letter("done-success")
+
+	e := NewExec([]Letter{
+		RegisterSuccess,
+		GroupJoinSuccess,
+		SendSuccess,
+		SendSuccess,
+		SendFailure,
+		SendFailure,
+		SendSuccess,
+		ExitWanted,
+	})
+
+	d := New()
+	d.SetStartState(Registering)
+	d.SetTerminalStates(Exiting, Terminating)
+
+	d.SetTransition(Registering, RegisterSuccess, Waiting, e.Next)
+	d.SetTransition(Registering, RegisterFailure, Exiting, e.Last)
+	d.SetTransition(Registering, ExitWanted, Exiting, e.Last)
+
+	d.SetTransition(Waiting, GroupJoinSuccess, Running, e.Next)
+	d.SetTransition(Waiting, GroupJoinFailure, Exiting, e.Last)
+	d.SetTransition(Waiting, ExitWanted, Exiting, e.Last)
+
+	d.SetTransition(Running, SendSuccess, Running, e.Next)
+	d.SetTransition(Running, SendFailure, Resending, e.Next)
+	d.SetTransition(Running, ExitWanted, Exiting, e.Last)
+	d.SetTransition(Running, DoneSuccess, Terminating, e.Last)
+
+	d.SetTransition(Resending, SendSuccess, Running, e.Next)
+	d.SetTransition(Resending, SendFailure, Resending, e.Next)
+	d.SetTransition(Resending, ExitWanted, Exiting, e.Last)
+
+	final, accepted := d.RunSynchronous(e.Next)
+	if !accepted {
+		t.Fatalf("failed to recognize Exiting or Terminating as terminal state")
+	}
+
+	if final != Exiting {
+		t.Fatalf("final state should have been: %v, but was: %v", Exiting, final)
+	}
+
+	if e.NextCount() != 8 {
+		t.Fatalf("NexCount() expected to be 8, got %d", e.NextCount())
+	}
+
+	if e.LastCount() != 1 {
+		t.Fatalf("LastCount() expected 1, got %d", e.LastCount())
+	}
+}
